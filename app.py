@@ -4,18 +4,14 @@ import yfinance as yf
 import seaborn as sns
 import numpy as np
 import matplotlib.pyplot as plt
-from sklearn.model_selection import train_test_split 
-from sklearn.linear_model 
-import LinearRegression
-from sklearn.metrics import mean_absolute_error 
-from statsmodels.tsa.arima.model import ARIMA 
-import tensorflow as tf 
-from tensorflow.keras.models 
-import Sequential 
-from tensorflow.keras.layers 
-import LSTM, Dense, Dropout 
-from sklearn.preprocessing 
-import MinMaxScaler
+from sklearn.model_selection import train_test_split
+from sklearn.linear_model import LinearRegression
+from sklearn.metrics import mean_absolute_error
+from statsmodels.tsa.arima.model import ARIMA
+import tensorflow as tf
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import LSTM, Dense, Dropout
+from sklearn.preprocessing import MinMaxScaler
 
 st.title("Análise Financeira de Criptomoedas")
 
