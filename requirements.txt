@@ -1,7 +1,9 @@
 streamlit
-yfinance
-seaborn
-matplotlib
 pandas
 numpy
-
+matplotlib
+seaborn
+yfinance
+scikit-learn
+statsmodels
+tensorflow
