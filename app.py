@@ -98,56 +98,73 @@ plt.tight_layout()
 st.pyplot(fig)
 
 
-#Baixar dados do BTC
 
-st.title("Análise Preditiva de Criptomoedas") st.subheader("Previsão do Preço do BTC-USD") df = yf.download("BTC-USD", start="2023-01-20") df.dropna(inplace=True)
 
-#Criar variáveis para modelos
+# Baixar dados do BTC
+st.title("Análise Preditiva de Criptomoedas")
+st.subheader("Previsão do Preço do BTC-USD")
+df = yf.download("BTC-USD", start="2023-01-20")
+df.dropna(inplace=True)
 
-df["MM_20"] = df["Close"].rolling(window=20).mean() df["MM_50"] = df["Close"].rolling(window=50).mean() df["EMA_20"] = df["Close"].ewm(span=20, adjust=False).mean() df["Retorno Diário"] = df["Close"].pct_change() df.dropna(inplace=True)
+# Criar variáveis para modelos
+df["MM_20"] = df["Close"].rolling(window=20).mean()
+df["MM_50"] = df["Close"].rolling(window=50).mean()
+df["EMA_20"] = df["Close"].ewm(span=20, adjust=False).mean()
+df["Retorno Diário"] = df["Close"].pct_change()
+df.dropna(inplace=True)
 
-#Criar seleção de modelo
-
+# Criar seleção de modelo
 modelo_selecionado = st.selectbox("Escolha um modelo de previsão:", ["Regressão Linear", "LSTM", "ARIMA"])
 
-#Regressão Linear
+# Regressão Linear
+if modelo_selecionado == "Regressão Linear":
+    df["Target"] = df["Close"].shift(-1)
+    df.dropna(inplace=True)
+    X = df[["Close", "MM_20", "MM_50", "EMA_20", "Retorno Diário"]]
+    y = df["Target"]
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+    modelo = LinearRegression()
+    modelo.fit(X_train, y_train)
+    previsao = modelo.predict([X.iloc[-1]])[0]
+    st.write(f"Previsão de fechamento com Regressão Linear: {previsao:.2f}")
 
-if modelo_selecionado == "Regressão Linear": df["Target"] = df["Close"].shift(-1) df.dropna(inplace=True) X = df[["Close", "MM_20", "MM_50", "EMA_20", "Retorno Diário"]] y = df["Target"] X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42) modelo = LinearRegression() modelo.fit(X_train, y_train) previsao = modelo.predict([X.iloc[-1]])[0] st.write(f"Previsão de fechamento com Regressão Linear: {previsao:.2f}")
+# Modelo LSTM
+elif modelo_selecionado == "LSTM":
+    scaler = MinMaxScaler()
+    df["Close_Scaled"] = scaler.fit_transform(df[["Close"]])
 
-#Modelo LSTM
+    def create_sequences(data, window_size=10):
+        X, y = [], []
+        for i in range(len(data) - window_size):
+            X.append(data[i:i+window_size])
+            y.append(data[i+window_size])
+        return np.array(X), np.array(y)
 
-elif modelo_selecionado == "LSTM": scaler = MinMaxScaler() df["Close_Scaled"] = scaler.fit_transform(df[["Close"]])
+    window_size = 10
+    X, y = create_sequences(df["Close_Scaled"].values, window_size)
+    X_train, X_test = X[:-100], X[-100:]
+    y_train, y_test = y[:-100], y[-100:]
 
-def create_sequences(data, window_size=10):
-    X, y = [], []
-    for i in range(len(data) - window_size):
-        X.append(data[i:i+window_size])
-        y.append(data[i+window_size])
-    return np.array(X), np.array(y)
+    model = Sequential([
+        LSTM(50, return_sequences=True, input_shape=(window_size, 1)),
+        Dropout(0.2),
+        LSTM(50),
+        Dense(1)
+    ])
 
-window_size = 10
-X, y = create_sequences(df["Close_Scaled"].values, window_size)
-X_train, X_test = X[:-100], X[-100:]
-y_train, y_test = y[:-100], y[-100:]
+    model.compile(optimizer="adam", loss="mse")
+    model.fit(X_train, y_train, epochs=20, batch_size=16, verbose=0)
 
-model = Sequential([
-    LSTM(50, return_sequences=True, input_shape=(window_size, 1)),
-    Dropout(0.2),
-    LSTM(50),
-    Dense(1)
-])
+    proxima_previsao = model.predict(np.expand_dims(X[-1], axis=0))
+    previsao_real = scaler.inverse_transform(proxima_previsao.reshape(-1, 1))[0][0]
+    st.write(f"Previsão de fechamento com LSTM: {previsao_real:.2f}")
 
-model.compile(optimizer="adam", loss="mse")
-model.fit(X_train, y_train, epochs=20, batch_size=16, verbose=0)
-
-proxima_previsao = model.predict(np.expand_dims(X[-1], axis=0))
-previsao_real = scaler.inverse_transform(proxima_previsao.reshape(-1, 1))[0][0]
-st.write(f"Previsão de fechamento com LSTM: {previsao_real:.2f}")
-
-#Modelo ARIMA
-
-elif modelo_selecionado == "ARIMA": modelo_arima = ARIMA(df["Close"], order=(5,1,0)) modelo_treinado = modelo_arima.fit() previsao = modelo_treinado.forecast(steps=1)[0] st.write(f"Previsão de fechamento com ARIMA: {previsao:.2f}")
-
+# Modelo ARIMA
+elif modelo_selecionado == "ARIMA":
+    modelo_arima = ARIMA(df["Close"], order=(5,1,0))
+    modelo_treinado = modelo_arima.fit()
+    previsao = modelo_treinado.forecast(steps=1)[0]
+    st.write(f"Previsão de fechamento com ARIMA: {previsao:.2f}")
 
 
 
