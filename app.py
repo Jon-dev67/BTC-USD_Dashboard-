@@ -125,18 +125,23 @@ if modelo_selecionado == "Regressão Linear":
     X = df[["Close", "MM_20", "MM_50", "EMA_20", "Retorno Diário"]]
     y = df["Target"]
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+    
     modelo = LinearRegression()
     modelo.fit(X_train, y_train)
-    previsao = modelo.predict(X_test)
-    
-    # Exibindo a previsão
-    st.write(f"Previsões de fechamento com Regressão Linear: {previsao[:5]}...")  # Exemplo de previsão para as primeiras 5
-    
-    # Gráfico de Previsão
-    plt.figure(figsize=(10, 5))
-    plt.plot(df.index[-len(y_test):], y_test, label="Preço Real", color="blue")
-    plt.plot(df.index[-len(y_test):], previsao, label="Previsão", color="red", linestyle="--")
+    previsao = modelo.predict([X.iloc[-1]])[0]
+    st.write(f"Previsão de fechamento com Regressão Linear: {previsao:.2f}")
+
+    # Plotando gráfico
+    plt.figure(figsize=(12, 6))
+    plt.plot(df.index, df["Close"], label="Preço Real", color="blue", linewidth=2)
+    plt.axvline(x=df.index[-1], color='grey', linestyle='--')
+    plt.plot(df.index[-1], previsao, 'ro', label="Previsão", markersize=10)
+    plt.title("Previsão de Preço do BTC-USD com Regressão Linear", fontsize=16)
+    plt.xlabel("Data", fontsize=12)
+    plt.ylabel("Preço (USD)", fontsize=12)
     plt.legend()
+    plt.grid(True, linestyle='--', alpha=0.6)
+    plt.tight_layout()
     st.pyplot(plt)
 
 # Modelo LSTM
@@ -168,37 +173,64 @@ elif modelo_selecionado == "LSTM":
 
     previsao = model.predict(X_test)
     previsao_real = scaler.inverse_transform(previsao.reshape(-1, 1))
-    
-    # Exibindo a previsão
-    st.write(f"Previsões de fechamento com LSTM: {previsao_real[:5].flatten()}...")  # Exemplo de previsão para as primeiras 5
-    
-    # Gráfico de Previsão
-    plt.figure(figsize=(10, 5))
-    plt.plot(df.index[-len(y_test):], scaler.inverse_transform(y_test.reshape(-1, 1)), label="Preço Real", color="blue")
-    plt.plot(df.index[-len(y_test):], previsao_real.flatten(), label="Previsão", color="red", linestyle="--")
+
+    # Plotando gráfico
+    plt.figure(figsize=(12, 6))
+    plt.plot(df.index[-len(y_test):], scaler.inverse_transform(y_test.reshape(-1, 1)), label="Preço Real", color="blue", linewidth=2)
+    plt.plot(df.index[-len(y_test):], previsao_real.flatten(), label="Previsão LSTM", color="red", linestyle="--", marker='o', markersize=8)
+
+    # Adicionando setas para indicar pontos de previsão
+    for i in range(len(previsao_real)):
+        plt.annotate('↓', (df.index[-len(y_test)+i], previsao_real[i]), textcoords="offset points", xytext=(0,10), ha='center', color='red', fontsize=15)
+
+    plt.title("Previsão de Preço do BTC-USD com LSTM", fontsize=16)
+    plt.xlabel("Data", fontsize=12)
+    plt.ylabel("Preço (USD)", fontsize=12)
     plt.legend()
+    plt.grid(True, linestyle='--', alpha=0.6)
+    plt.tight_layout()
     st.pyplot(plt)
 
 # Modelo ARIMA
 elif modelo_selecionado == "ARIMA":
     modelo_arima = ARIMA(df["Close"], order=(5,1,0))
     modelo_treinado = modelo_arima.fit()
-    
+
     # Definir o número de passos para previsão
     passos_para_previsao = 5  # Exemplo: prever os próximos 5 dias
     previsao = modelo_treinado.forecast(steps=passos_para_previsao)
-    
+
     # Exibindo a previsão
     st.write(f"Previsões de fechamento com ARIMA para os próximos {passos_para_previsao} dias: {previsao}")
-    
+
     # Gerar um gráfico para as previsões
     previsao_index = pd.date_range(start=df.index[-1], periods=passos_para_previsao + 1, freq="D")[1:]
-    
-    plt.figure(figsize=(10, 5))
-    plt.plot(df.index, df["Close"], label="Preço Real", color="blue")
-    plt.plot(previsao_index, previsao, label="Previsão ARIMA", color="red", linestyle="--")
+
+    plt.figure(figsize=(12, 6))
+
+    # Plotando o gráfico de preço real
+    plt.plot(df.index, df["Close"], label="Preço Real", color="blue", linewidth=2)
+
+    # Plotando as previsões do ARIMA
+    plt.plot(previsao_index, previsao, label="Previsão ARIMA", color="red", linestyle="--", marker='o', markersize=8)
+
+    # Adicionando setas para indicar pontos de previsão
+    for i in range(len(previsao)):
+        plt.annotate('↓', (previsao_index[i], previsao[i]), textcoords="offset points", xytext=(0,10), ha='center', color='red', fontsize=15)
+
+    # Títulos e labels
+    plt.title("Previsão de Preço do BTC-USD com ARIMA", fontsize=16)
+    plt.xlabel("Data", fontsize=12)
+    plt.ylabel("Preço (USD)", fontsize=12)
     plt.legend()
+
+    # Melhorando a estética do gráfico
+    plt.grid(True, linestyle='--', alpha=0.6)
+    plt.tight_layout()
+
     st.pyplot(plt)
+
+
 
 
 
