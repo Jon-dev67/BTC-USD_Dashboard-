@@ -23,7 +23,7 @@ Este é um aplicativo de análise de dados financeiros focado na criptomoeda Bit
 
 1. Clone este repositório:
     ```bash
-    git clone https://github.com/seuusuario/seurepositorio.git
+    git clone https://github.com/Jon-dev67/BTC-USD_Dashboard-.git
     ```
 
 2. Instale as dependências:
