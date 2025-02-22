@@ -105,20 +105,7 @@ st.pyplot(fig)
 
 
 
-import streamlit as st
-import pandas as pd
-import numpy as np
-import yfinance as yf
-import seaborn as sns
-import matplotlib.pyplot as plt
-from sklearn.model_selection import train_test_split
-from sklearn.linear_model import LinearRegression
-from sklearn.metrics import mean_absolute_error
-from statsmodels.tsa.arima.model import ARIMA
-import tensorflow as tf
-from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import LSTM, Dense, Dropout
-from sklearn.preprocessing import MinMaxScaler
+
 
 # Modo escuro do gráfico
 plt.style.use('dark_background')
