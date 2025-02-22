@@ -183,15 +183,20 @@ elif modelo_selecionado == "LSTM":
 elif modelo_selecionado == "ARIMA":
     modelo_arima = ARIMA(df["Close"], order=(5,1,0))
     modelo_treinado = modelo_arima.fit()
-    previsao = modelo_treinado.forecast(steps=len(y_test))
+    
+    # Definir o número de passos para previsão
+    passos_para_previsao = 5  # Exemplo: prever os próximos 5 dias
+    previsao = modelo_treinado.forecast(steps=passos_para_previsao)
     
     # Exibindo a previsão
-    st.write(f"Previsões de fechamento com ARIMA: {previsao[:5]}...")  # Exemplo de previsão para as primeiras 5
+    st.write(f"Previsões de fechamento com ARIMA para os próximos {passos_para_previsao} dias: {previsao}")
     
-    # Gráfico de Previsão
+    # Gerar um gráfico para as previsões
+    previsao_index = pd.date_range(start=df.index[-1], periods=passos_para_previsao + 1, freq="D")[1:]
+    
     plt.figure(figsize=(10, 5))
-    plt.plot(df.index[-len(y_test):], df["Close"].iloc[-len(y_test):], label="Preço Real", color="blue")
-    plt.plot(df.index[-len(y_test):], previsao, label="Previsão", color="red", linestyle="--")
+    plt.plot(df.index, df["Close"], label="Preço Real", color="blue")
+    plt.plot(previsao_index, previsao, label="Previsão ARIMA", color="red", linestyle="--")
     plt.legend()
     st.pyplot(plt)
 
