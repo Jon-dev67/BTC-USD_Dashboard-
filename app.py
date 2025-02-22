@@ -13,6 +13,9 @@ from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import LSTM, Dense, Dropout
 from sklearn.preprocessing import MinMaxScaler
 
+# Modo escuro do gráfico
+plt.style.use('dark_background')
+
 st.title("Análise Financeira de Criptomoedas")
 
 # Baixar dados do BTC
