@@ -102,6 +102,24 @@ st.pyplot(fig)
 
 
 
+import streamlit as st
+import pandas as pd
+import numpy as np
+import yfinance as yf
+import seaborn as sns
+import matplotlib.pyplot as plt
+from sklearn.model_selection import train_test_split
+from sklearn.linear_model import LinearRegression
+from sklearn.metrics import mean_absolute_error
+from statsmodels.tsa.arima.model import ARIMA
+import tensorflow as tf
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import LSTM, Dense, Dropout
+from sklearn.preprocessing import MinMaxScaler
+
+# Modo escuro do gráfico
+plt.style.use('dark_background')
+
 # Baixar dados do BTC
 st.title("Análise Preditiva de Criptomoedas")
 st.subheader("Previsão do Preço do BTC-USD")
@@ -133,8 +151,8 @@ if modelo_selecionado == "Regressão Linear":
 
     # Plotando gráfico
     plt.figure(figsize=(12, 6))
-    plt.plot(df.index, df["Close"], label="Preço Real", color="blue", linewidth=2)
-    plt.axvline(x=df.index[-1], color='grey', linestyle='--')
+    plt.plot(df.index, df["Close"], label="Preço Real", color="cyan", linewidth=2)
+    plt.axvline(x=df.index[-1], color='white', linestyle='--')
     plt.plot(df.index[-1], previsao, 'ro', label="Previsão", markersize=10)
     plt.title("Previsão de Preço do BTC-USD com Regressão Linear", fontsize=16)
     plt.xlabel("Data", fontsize=12)
@@ -176,12 +194,12 @@ elif modelo_selecionado == "LSTM":
 
     # Plotando gráfico
     plt.figure(figsize=(12, 6))
-    plt.plot(df.index[-len(y_test):], scaler.inverse_transform(y_test.reshape(-1, 1)), label="Preço Real", color="blue", linewidth=2)
+    plt.plot(df.index[-len(y_test):], scaler.inverse_transform(y_test.reshape(-1, 1)), label="Preço Real", color="cyan", linewidth=2)
     plt.plot(df.index[-len(y_test):], previsao_real.flatten(), label="Previsão LSTM", color="red", linestyle="--", marker='o', markersize=8)
 
     # Adicionando setas para indicar pontos de previsão
     for i in range(len(previsao_real)):
-        plt.annotate('↓', (df.index[-len(y_test)+i], previsao_real[i]), textcoords="offset points", xytext=(0,10), ha='center', color='red', fontsize=15)
+        plt.annotate('↑', (df.index[-len(y_test)+i], previsao_real[i]), textcoords="offset points", xytext=(0,10), ha='center', color='yellow', fontsize=15)
 
     plt.title("Previsão de Preço do BTC-USD com LSTM", fontsize=16)
     plt.xlabel("Data", fontsize=12)
@@ -209,14 +227,14 @@ elif modelo_selecionado == "ARIMA":
     plt.figure(figsize=(12, 6))
 
     # Plotando o gráfico de preço real
-    plt.plot(df.index, df["Close"], label="Preço Real", color="blue", linewidth=2)
+    plt.plot(df.index, df["Close"], label="Preço Real", color="cyan", linewidth=2)
 
     # Plotando as previsões do ARIMA
     plt.plot(previsao_index, previsao, label="Previsão ARIMA", color="red", linestyle="--", marker='o', markersize=8)
 
     # Adicionando setas para indicar pontos de previsão
     for i in range(len(previsao)):
-        plt.annotate('↓', (previsao_index[i], previsao[i]), textcoords="offset points", xytext=(0,10), ha='center', color='red', fontsize=15)
+        plt.annotate('↑', (previsao_index[i], previsao[i]), textcoords="offset points", xytext=(0,10), ha='center', color='yellow', fontsize=15)
 
     # Títulos e labels
     plt.title("Previsão de Preço do BTC-USD com ARIMA", fontsize=16)
