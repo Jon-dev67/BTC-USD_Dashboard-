@@ -178,5 +178,3 @@ st.write(f"Retorno: {melhor_portfolio['Retorno']:.2%}")
 st.write(f"Risco: {melhor_portfolio['Risco']:.2%}")
 st.write(f"Sharpe Ratio: {melhor_portfolio['Sharpe']:.2f}")
 
-
-streamlit run app.py
