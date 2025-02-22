@@ -101,6 +101,7 @@ st.pyplot(fig)
 
 
 
+
 # Baixar dados do BTC
 st.title("Análise Preditiva de Criptomoedas")
 st.subheader("Previsão do Preço do BTC-USD")
@@ -126,15 +127,15 @@ if modelo_selecionado == "Regressão Linear":
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
     modelo = LinearRegression()
     modelo.fit(X_train, y_train)
-    previsao = modelo.predict([X.iloc[-1]])[0]
+    previsao = modelo.predict(X_test)
     
     # Exibindo a previsão
-    st.write(f"Previsão de fechamento com Regressão Linear: {previsao:.2f}")
+    st.write(f"Previsões de fechamento com Regressão Linear: {previsao[:5]}...")  # Exemplo de previsão para as primeiras 5
     
     # Gráfico de Previsão
     plt.figure(figsize=(10, 5))
-    plt.plot(df.index, df["Close"], label="Preço Real", color="blue")
-    plt.axvline(x=df.index[-1], color="red", linestyle="--", label="Previsão")
+    plt.plot(df.index[-len(y_test):], y_test, label="Preço Real", color="blue")
+    plt.plot(df.index[-len(y_test):], previsao, label="Previsão", color="red", linestyle="--")
     plt.legend()
     st.pyplot(plt)
 
@@ -165,16 +166,16 @@ elif modelo_selecionado == "LSTM":
     model.compile(optimizer="adam", loss="mse")
     model.fit(X_train, y_train, epochs=20, batch_size=16, verbose=0)
 
-    proxima_previsao = model.predict(np.expand_dims(X[-1], axis=0))
-    previsao_real = scaler.inverse_transform(proxima_previsao.reshape(-1, 1))[0][0]
+    previsao = model.predict(X_test)
+    previsao_real = scaler.inverse_transform(previsao.reshape(-1, 1))
     
     # Exibindo a previsão
-    st.write(f"Previsão de fechamento com LSTM: {previsao_real:.2f}")
+    st.write(f"Previsões de fechamento com LSTM: {previsao_real[:5].flatten()}...")  # Exemplo de previsão para as primeiras 5
     
     # Gráfico de Previsão
     plt.figure(figsize=(10, 5))
-    plt.plot(df.index, df["Close"], label="Preço Real", color="blue")
-    plt.axvline(x=df.index[-1], color="red", linestyle="--", label="Previsão")
+    plt.plot(df.index[-len(y_test):], scaler.inverse_transform(y_test.reshape(-1, 1)), label="Preço Real", color="blue")
+    plt.plot(df.index[-len(y_test):], previsao_real.flatten(), label="Previsão", color="red", linestyle="--")
     plt.legend()
     st.pyplot(plt)
 
@@ -182,17 +183,18 @@ elif modelo_selecionado == "LSTM":
 elif modelo_selecionado == "ARIMA":
     modelo_arima = ARIMA(df["Close"], order=(5,1,0))
     modelo_treinado = modelo_arima.fit()
-    previsao = modelo_treinado.forecast(steps=1)[0]
+    previsao = modelo_treinado.forecast(steps=len(y_test))
     
     # Exibindo a previsão
-    st.write(f"Previsão de fechamento com ARIMA: {previsao:.2f}")
+    st.write(f"Previsões de fechamento com ARIMA: {previsao[:5]}...")  # Exemplo de previsão para as primeiras 5
     
     # Gráfico de Previsão
     plt.figure(figsize=(10, 5))
-    plt.plot(df.index, df["Close"], label="Preço Real", color="blue")
-    plt.axvline(x=df.index[-1], color="red", linestyle="--", label="Previsão")
+    plt.plot(df.index[-len(y_test):], df["Close"].iloc[-len(y_test):], label="Preço Real", color="blue")
+    plt.plot(df.index[-len(y_test):], previsao, label="Previsão", color="red", linestyle="--")
     plt.legend()
     st.pyplot(plt)
+
 
 
 
