@@ -1,11 +1,9 @@
-streamlit
-pandas
+streamlit>=1.32.0
+pandas>=2.0.0
 numpy
 matplotlib
-seaborn
-yfinance
-scikit-learn
-statsmodels
-tensorflow
 plotly
-psycopg2
+requests
+streamlit-option-menu==0.3.6
+psycopg2-binary
+xlsxwriter 
