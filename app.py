@@ -1,334 +1,439 @@
 import streamlit as st
-import pandas as pd
-import yfinance as yf
-import seaborn as sns
-import numpy as np
-import matplotlib.pyplot as plt
-from sklearn.model_selection import train_test_split
-from sklearn.linear_model import LinearRegression
-from sklearn.metrics import mean_absolute_error
-from statsmodels.tsa.arima.model import ARIMA
-import tensorflow as tf
-from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import LSTM, Dense, Dropout
-from sklearn.preprocessing import MinMaxScaler
+import requests
+import json
+import base64
+from datetime import datetime, timedelta
 
-# Modo escuro do gráfico
-plt.style.use('dark_background')
+# Configuração da página
+st.set_page_config(
+    page_title="AgroAssistente IA - Embrapa",
+    page_icon="🌱",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
 
-st.title("Análise Financeira de Criptomoedas")
+# CSS customizado
+st.markdown("""
+<style>
+    .main-header {
+        font-size: 2.8rem;
+        color: #2e7d32;
+        text-align: center;
+        margin-bottom: 1rem;
+    }
+    .embrapa-brand {
+        text-align: center;
+        color: #666;
+        font-size: 1.1rem;
+        margin-bottom: 2rem;
+    }
+    .response-card {
+        background-color: #f8fffd;
+        border-left: 4px solid #2e7d32;
+        padding: 1.5rem;
+        margin: 1rem 0;
+        border-radius: 8px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    .token-status {
+        padding: 6px 12px;
+        border-radius: 15px;
+        font-size: 0.8rem;
+        font-weight: bold;
+    }
+    .status-valid {
+        background: #4caf50;
+        color: white;
+    }
+    .status-expired {
+        background: #ff9800;
+        color: white;
+    }
+    .status-error {
+        background: #f44336;
+        color: white;
+    }
+    .credential-box {
+        background: #f5f5f5;
+        padding: 15px;
+        border-radius: 8px;
+        border-left: 4px solid #2196f3;
+        font-family: monospace;
+        font-size: 0.9rem;
+    }
+</style>
+""", unsafe_allow_html=True)
 
-# Baixar dados do BTC
-st.subheader("Cotação do BTC-USD")
-df = yf.download("BTC-USD", start="2023-01-20")
-df.dropna(inplace=True)
-
-# Exibir os dados básicos
-st.write(df.describe())
-
-# Plotando o preço de fechamento
-st.subheader("Evolução do Preço do BTC-USD")
-fig, ax = plt.subplots(figsize=(10, 5))
-ax.plot(df["Close"], label="Preço de Fechamento", color="blue")
-ax.set_xlabel("Data")
-ax.set_ylabel("Preço ($)")
-ax.set_title("Evolução do Preço do BTC-USD")
-ax.legend()
-ax.grid()
-st.pyplot(fig)
-
-# Criando médias móveis de 20 e 50 dias
-df["MM_20"] = df["Close"].rolling(window=20).mean()
-df["MM_50"] = df["Close"].rolling(window=50).mean()
-
-st.subheader("Médias Móveis do BTC-USD")
-fig, ax = plt.subplots(figsize=(10, 5))
-ax.plot(df["Close"], label="Preço de Fechamento", color="blue")
-ax.plot(df["MM_20"], label="Média Móvel 20 dias", color="red", linestyle="dashed")
-ax.plot(df["MM_50"], label="Média Móvel 50 dias", color="green", linestyle="dashed")
-ax.legend()
-ax.grid()
-st.pyplot(fig)
-
-# Calcular Retorno Diário (%)
-df["Retorno Diário"] = df["Close"].pct_change()
-
-# Calcular Retorno Acumulado (%)
-df["Retorno Acumulado"] = (1 + df["Retorno Diário"]).cumprod()
-
-st.subheader("Retorno Acumulado do BTC-USD")
-fig, ax = plt.subplots(figsize=(10, 5))
-ax.plot(df["Retorno Acumulado"], label="Retorno Acumulado", color="purple")
-ax.set_title("Retorno Acumulado da BTC-USD")
-ax.set_xlabel("Data")
-ax.set_ylabel("Retorno (%)")
-ax.legend()
-ax.grid()
-st.pyplot(fig)
-
-# Calcular Média Móvel Exponencial (EMA)
-df["EMA_20"] = df["Close"].ewm(span=20, adjust=False).mean()
-
-# Calcular RSI (Índice de Força Relativa)
-window = 14
-delta = df["Close"].diff()
-gain = (delta.where(delta > 0, 0)).rolling(window=window).mean()
-loss = (-delta.where(delta < 0, 0)).rolling(window=window).mean()
-rs = gain / loss
-df["RSI"] = 100 - (100 / (1 + rs))
-
-# Plotar EMA e RSI
-st.subheader("Análise Técnica: EMA e RSI")
-
-fig, ax = plt.subplots(2, 1, figsize=(10, 8))
-
-# Gráfico de Preço + EMA
-ax[0].plot(df["Close"], label="Preço de Fechamento", color="blue")
-ax[0].plot(df["EMA_20"], label="EMA 20 dias", color="orange", linestyle="dashed")
-ax[0].set_title("Preço e EMA do BTC-USD")
-ax[0].legend()
-ax[0].grid()
-
-# Gráfico do RSI
-ax[1].plot(df["RSI"], label="RSI", color="green")
-ax[1].axhline(70, linestyle="dashed", color="red")  # Nível de sobrecompra
-ax[1].axhline(30, linestyle="dashed", color="blue") # Nível de sobrevenda
-ax[1].set_title("RSI do BTC-USD")
-ax[1].legend()
-ax[1].grid()
-
-plt.tight_layout()
-st.pyplot(fig)
-
-
-
-
-
-
-
-
-# Modo escuro do gráfico
-plt.style.use('dark_background')
-
-# Baixar dados do BTC
-st.title("Análise Preditiva de Criptomoedas")
-st.subheader("Previsão do Preço do BTC-USD")
-df = yf.download("BTC-USD", start="2023-01-20")
-df.dropna(inplace=True)
-
-# Criar variáveis para modelos
-df["MM_20"] = df["Close"].rolling(window=20).mean()
-df["MM_50"] = df["Close"].rolling(window=50).mean()
-df["EMA_20"] = df["Close"].ewm(span=20, adjust=False).mean()
-df["Retorno Diário"] = df["Close"].pct_change()
-df.dropna(inplace=True)
-
-# Criar seleção de modelo
-modelo_selecionado = st.selectbox("Escolha um modelo de previsão:", ["Regressão Linear", "LSTM", "ARIMA"])
-
-# Regressão Linear
-if modelo_selecionado == "Regressão Linear":
-    df["Target"] = df["Close"].shift(-1)
-    df.dropna(inplace=True)
-    X = df[["Close", "MM_20", "MM_50", "EMA_20", "Retorno Diário"]]
-    y = df["Target"]
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+class EmbrapaAuth:
+    def __init__(self):
+        # SUAS CREDENCIAIS - Cole aqui as que você recebeu
+        self.consumer_key = "DI_JQ6o06C8ktdGR0pwpuSL6f3ka"
+        self.consumer_secret = "BXmyFKVuIHlCsaUUS40Ya0bV8msa"
+        self.token_url = "https://api.cnptia.embrapa.br/token"
+        self.base64_credentials = self._get_base64_credentials()
+        
+    def _get_base64_credentials(self):
+        """Codifica credenciais em Base64"""
+        credentials = f"{self.consumer_key}:{self.consumer_secret}"
+        return base64.b64encode(credentials.encode()).decode()
     
-    modelo = LinearRegression()
-    modelo.fit(X_train, y_train)
-    previsao = modelo.predict([X.iloc[-1]])[0]
-    st.write(f"Previsão de fechamento com Regressão Linear: {previsao:.2f}")
+    def get_access_token(self):
+        """Obtém token de acesso usando Client Credentials"""
+        headers = {
+            "Authorization": f"Basic {self.base64_credentials}",
+            "Content-Type": "application/x-www-form-urlencoded"
+        }
+        
+        data = {
+            "grant_type": "client_credentials"
+        }
+        
+        try:
+            response = requests.post(self.token_url, headers=headers, data=data, timeout=30)
+            
+            if response.status_code == 200:
+                token_data = response.json()
+                return {
+                    "access_token": token_data.get("access_token"),
+                    "expires_in": token_data.get("expires_in"),
+                    "token_type": token_data.get("token_type"),
+                    "timestamp": datetime.now()
+                }
+            else:
+                st.error(f"❌ Erro na autenticação: {response.status_code}")
+                st.write(f"Resposta: {response.text}")
+                return None
+                
+        except Exception as e:
+            st.error(f"🚫 Erro de conexão: {e}")
+            return None
 
-    # Plotando gráfico
-    plt.figure(figsize=(12, 6))
-    plt.plot(df.index, df["Close"], label="Preço Real", color="cyan", linewidth=2)
-    plt.axvline(x=df.index[-1], color='white', linestyle='--')
-    plt.plot(df.index[-1], previsao, 'ro', label="Previsão", markersize=10)
-    plt.title("Previsão de Preço do BTC-USD com Regressão Linear", fontsize=16)
-    plt.xlabel("Data", fontsize=12)
-    plt.ylabel("Preço (USD)", fontsize=12)
-    plt.legend()
-    plt.grid(True, linestyle='--', alpha=0.6)
-    plt.tight_layout()
-    st.pyplot(plt)
+class RespondeAgroAPI:
+    def __init__(self):
+        self.base_url = "https://api.cnptia.embrapa.br/respondeagro/v1"
+        self.auth = EmbrapaAuth()
+        self.access_token = None
+        self.token_expiry = None
+        
+    def ensure_valid_token(self):
+        """Garante que temos um token válido"""
+        if self.access_token and self.token_expiry:
+            if datetime.now() < self.token_expiry - timedelta(seconds=300):  # 5 min de margem
+                return True
+        
+        # Obter novo token
+        token_data = self.auth.get_access_token()
+        if token_data:
+            self.access_token = token_data["access_token"]
+            expires_seconds = token_data["expires_in"]
+            self.token_expiry = datetime.now() + timedelta(seconds=expires_seconds)
+            return True
+        return False
+    
+    def make_request(self, payload, endpoint="_search/template"):
+        """Faz requisição para a API com autenticação"""
+        if not self.ensure_valid_token():
+            return {"error": "Falha na autenticação"}
+            
+        headers = {
+            "Authorization": f"Bearer {self.access_token}",
+            "Content-Type": "application/json"
+        }
+        
+        try:
+            url = f"{self.base_url}/{endpoint}"
+            response = requests.post(url, headers=headers, json=payload, timeout=30)
+            
+            if response.status_code == 200:
+                return response.json()
+            elif response.status_code == 401:
+                # Token expirado, tentar renovar
+                self.access_token = None
+                return self.make_request(payload, endpoint)
+            else:
+                return {
+                    "error": f"Erro {response.status_code}",
+                    "details": response.text
+                }
+                
+        except requests.exceptions.RequestException as e:
+            return {"error": f"Erro de conexão: {str(e)}"}
+    
+    def search_all_books(self, query, size=5):
+        """Busca em todos os livros"""
+        payload = {
+            "id": "query_all",
+            "params": {
+                "query_string": query,
+                "from": 0,
+                "size": size
+            }
+        }
+        return self.make_request(payload)
+    
+    def search_specific_book(self, query, book_id, size=3):
+        """Busca em livro específico"""
+        payload = {
+            "id": "query_one_book",
+            "params": {
+                "query_string": query,
+                "book_id": book_id,
+                "from": 0,
+                "size": size
+            }
+        }
+        return self.make_request(payload)
+    
+    def autocomplete(self, query, book_id=None):
+        """Sugestões de autocomplete"""
+        template_id = "autocomplete_one_book" if book_id else "autocomplete_all"
+        payload = {
+            "id": template_id,
+            "params": {
+                "query_string": query,
+                "book_id": book_id
+            } if book_id else {
+                "query_string": query
+            }
+        }
+        return self.make_request(payload)
+    
+    def get_book_ids(self):
+        """Obtém lista de livros disponíveis"""
+        payload = {
+            "id": "book_ids",
+            "params": {}
+        }
+        return self.make_request(payload)
+    
+    def get_token_status(self):
+        """Retorna status do token"""
+        if self.access_token and self.token_expiry:
+            time_left = self.token_expiry - datetime.now()
+            minutes_left = max(0, int(time_left.total_seconds() / 60))
+            return {
+                "status": "valid" if minutes_left > 5 else "expiring",
+                "minutes_left": minutes_left,
+                "token": self.access_token[:20] + "..." if self.access_token else None
+            }
+        return {"status": "no_token", "minutes_left": 0}
 
-# Modelo LSTM
-elif modelo_selecionado == "LSTM":
-    scaler = MinMaxScaler()
-    df["Close_Scaled"] = scaler.fit_transform(df[["Close"]])
+def display_result(hit, index):
+    """Exibe um resultado formatado"""
+    source = hit['_source']
+    score = hit.get('_score', 0)
+    
+    with st.container():
+        # Header do resultado
+        col1, col2 = st.columns([4, 1])
+        with col1:
+            st.markdown(f"### ❓ {source['question']}")
+        with col2:
+            st.metric("Relevância", f"{score:.1f}")
+        
+        # Metadados
+        col1, col2, col3, col4 = st.columns(4)
+        with col1:
+            st.caption(f"**📚 Livro:** {source['book']}")
+        with col2:
+            st.caption(f"**📖 Capítulo:** {source['chapter']}")
+        with col3:
+            st.caption(f"**🔢 Questão:** #{source['question_number']}")
+        with col4:
+            st.caption(f"**📅 Ano:** {source['year']}")
+        
+        # Resposta
+        st.markdown('<div class="response-card">', unsafe_allow_html=True)
+        st.markdown("**💡 Resposta Embrapa:**")
+        st.markdown(source['answer'], unsafe_allow_html=True)
+        st.markdown('</div>', unsafe_allow_html=True)
+        
+        # Links e recursos
+        with st.expander("📎 Recursos Adicionais"):
+            col1, col2 = st.columns(2)
+            with col1:
+                if source.get('pdf'):
+                    st.markdown(f"**[📄 PDF Completo]({source['pdf']})**")
+            with col2:
+                if source.get('epub'):
+                    st.markdown(f"**[📱 Versão EPUB]({source['epub']})**")
+        
+        st.markdown("---")
 
-    def create_sequences(data, window_size=10):
-        X, y = [], []
-        for i in range(len(data) - window_size):
-            X.append(data[i:i+window_size])
-            y.append(data[i+window_size])
-        return np.array(X), np.array(y)
+def main():
+    # Header principal
+    st.markdown('<h1 class="main-header">🌱 AgroAssistente IA</h1>', unsafe_allow_html=True)
+    st.markdown('<div class="embrapa-brand">Conectado à API Oficial da Embrapa - Conhecimento Científico em Tempo Real</div>', unsafe_allow_html=True)
+    
+    # Inicialização da API
+    api = RespondeAgroAPI()
+    
+    # Sidebar
+    with st.sidebar:
+        st.image("https://embrapa.br/assets/img/logo-embrapa.svg", width=150)
+        st.markdown("---")
+        
+        st.markdown("### 🔐 Status da Autenticação")
+        
+        # Status do token
+        token_status = api.get_token_status()
+        
+        if token_status["status"] == "valid":
+            st.markdown(f'<span class="token-status status-valid">✅ Token Válido</span>', unsafe_allow_html=True)
+            st.caption(f"Expira em: {token_status['minutes_left']} minutos")
+        elif token_status["status"] == "expiring":
+            st.markdown(f'<span class="token-status status-expired">⚠️ Token Expirando</span>', unsafe_allow_html=True)
+            st.caption(f"Expira em: {token_status['minutes_left']} minutos")
+        else:
+            st.markdown(f'<span class="token-status status-error">❌ Sem Token</span>', unsafe_allow_html=True)
+        
+        # Botão para renovar token
+        if st.button("🔄 Renovar Token"):
+            api.access_token = None
+            st.rerun()
+        
+        st.markdown("---")
+        st.markdown("### 🎯 Modo de Busca")
+        
+        search_mode = st.radio(
+            "Escolha o tipo de busca:",
+            ["🔍 Todos os Livros", "📚 Livro Específico"]
+        )
+        
+        book_id = None
+        if search_mode == "📚 Livro Específico":
+            books = {
+                "Soja": "soja",
+                "Milho": "milho", 
+                "Café": "cafe",
+                "Feijão": "feijao",
+                "Algodão": "algodao",
+                "ILPF": "ilpf",
+                "Abacaxi": "abacaxi",
+                "Uva": "uva"
+            }
+            selected_book = st.selectbox("Selecione o livro:", list(books.keys()))
+            book_id = books[selected_book]
+        
+        st.markdown("---")
+        st.markdown("### 📊 Configurações")
+        results_size = st.slider("Número de resultados", 3, 10, 5)
+        
+        st.markdown("---")
+        st.markdown("### 🔧 Suas Credenciais")
+        with st.expander("Ver Credenciais"):
+            st.markdown("""
+            <div class="credential-box">
+            Consumer Key: DI_JQ6o06C8ktdGR0pwpuSL6f3ka<br>
+            Consumer Secret: BXmyFKVuIHlCsaUUS40Ya0bV8msa<br>
+            Token URL: https://api.cnptia.embrapa.br/token
+            </div>
+            """, unsafe_allow_html=True)
+    
+    # Área principal de busca
+    col1, col2 = st.columns([3, 1])
+    
+    with col1:
+        query = st.text_input(
+            "🔍 **Faça sua pergunta sobre agricultura:**",
+            placeholder="Ex: Como controlar pragas? Qual adubo usar? Quando plantar?...",
+            help="Digite termos específicos para melhores resultados"
+        )
+    
+    with col2:
+        if st.button("🎯 Buscar na Embrapa", type="primary", use_container_width=True):
+            st.session_state.do_search = True
+    
+    # Busca automática quando query é preenchida por exemplo
+    if 'auto_query' in st.session_state:
+        query = st.session_state.auto_query
+        st.session_state.do_search = True
+        del st.session_state.auto_query
+    
+    # Executar busca
+    if st.session_state.get('do_search', False) and query:
+        st.session_state.do_search = False
+        
+        with st.spinner("🔍 Conectando à API Embrapa..."):
+            # Primeiro verifica autenticação
+            if not api.ensure_valid_token():
+                st.error("❌ Falha na autenticação com a API Embrapa")
+                return
+            
+            # Realiza a busca
+            if search_mode == "🔍 Todos os Livros":
+                results = api.search_all_books(query, results_size)
+            else:
+                results = api.search_specific_book(query, book_id, results_size)
+            
+            # Processamento dos resultados
+            if "error" in results:
+                st.error(f"❌ Erro na busca: {results['error']}")
+                if "details" in results:
+                    with st.expander("Detalhes técnicos do erro"):
+                        st.code(results['details'])
+            elif results and 'hits' in results and results['hits']['total']['value'] > 0:
+                total_results = results['hits']['total']['value']
+                
+                # Estatísticas
+                col1, col2, col3, col4 = st.columns(4)
+                with col1:
+                    st.metric("📊 Total Encontrado", total_results)
+                with col2:
+                    st.metric("🎯 Melhor Score", f"{results['hits']['max_score']:.1f}")
+                with col3:
+                    st.metric("⚡ Tempo Busca", f"{results.get('took', 0)}ms")
+                with col4:
+                    unique_books = len(set(hit['_source']['book_id'] for hit in results['hits']['hits']))
+                    st.metric("📚 Livros", unique_books)
+                
+                st.success(f"✅ Encontradas {total_results} respostas relevantes!")
+                st.markdown("---")
+                
+                # Exibir resultados
+                for i, hit in enumerate(results['hits']['hits']):
+                    display_result(hit, i)
+                    
+            else:
+                st.warning("""
+                🤔 Não encontramos respostas exatas para sua busca.
+                
+                **💡 Dicas para melhorar sua busca:**
+                - Use termos mais específicos (ex: "ferrugem soja" em vez de "doenças")
+                - Verifique a ortografia
+                - Tente sinônimos
+                - Use o modo "Todos os Livros" para busca mais ampla
+                """)
+    
+    # Seção de exemplos (quando não há busca)
+    if not query:
+        st.markdown("---")
+        st.markdown("### 💡 Exemplos de Perguntas")
+        
+        examples = [
+            "Como controlar a ferrugem da soja?",
+            "Qual a melhor época para plantar milho?",
+            "Como fazer adubação orgânica?",
+            "Controle de cigarrinha do milho",
+            "Manejo de irrigação para feijão",
+            "Como identificar deficiência de nutrientes?"
+        ]
+        
+        cols = st.columns(3)
+        for i, example in enumerate(examples):
+            with cols[i % 3]:
+                if st.button(example, use_container_width=True, key=f"ex_{i}"):
+                    st.session_state.auto_query = example
+                    st.rerun()
+    
+    # Footer
+    st.markdown("---")
+    st.markdown("""
+    <div style='text-align: center; color: #666;'>
+    <p>🚀 <strong>CONEXÃO ATIVA</strong> - API Oficial Embrapa Agricultura Digital</p>
+    <p>📧 Contato: agroapi@embrapa.br | 🕒 Atualizado: Nov 2024</p>
+    </div>
+    """, unsafe_allow_html=True)
 
-    window_size = 10
-    X, y = create_sequences(df["Close_Scaled"].values, window_size)
-    X_train, X_test = X[:-100], X[-100:]
-    y_train, y_test = y[:-100], y[-100:]
-
-    model = Sequential([
-        LSTM(50, return_sequences=True, input_shape=(window_size, 1)),
-        Dropout(0.2),
-        LSTM(50),
-        Dense(1)
-    ])
-
-    model.compile(optimizer="adam", loss="mse")
-    model.fit(X_train, y_train, epochs=20, batch_size=16, verbose=0)
-
-    previsao = model.predict(X_test)
-    previsao_real = scaler.inverse_transform(previsao.reshape(-1, 1))
-
-    # Plotando gráfico
-    plt.figure(figsize=(12, 6))
-    plt.plot(df.index[-len(y_test):], scaler.inverse_transform(y_test.reshape(-1, 1)), label="Preço Real", color="cyan", linewidth=2)
-    plt.plot(df.index[-len(y_test):], previsao_real.flatten(), label="Previsão LSTM", color="red", linestyle="--", marker='o', markersize=8)
-
-    # Adicionando setas para indicar pontos de previsão
-    for i in range(len(previsao_real)):
-        plt.annotate('↑', (df.index[-len(y_test)+i], previsao_real[i]), textcoords="offset points", xytext=(0,10), ha='center', color='yellow', fontsize=15)
-
-    plt.title("Previsão de Preço do BTC-USD com LSTM", fontsize=16)
-    plt.xlabel("Data", fontsize=12)
-    plt.ylabel("Preço (USD)", fontsize=12)
-    plt.legend()
-    plt.grid(True, linestyle='--', alpha=0.6)
-    plt.tight_layout()
-    st.pyplot(plt)
-
-# Modelo ARIMA
-elif modelo_selecionado == "ARIMA":
-    modelo_arima = ARIMA(df["Close"], order=(5,1,0))
-    modelo_treinado = modelo_arima.fit()
-
-    # Definir o número de passos para previsão
-    passos_para_previsao = 5  # Exemplo: prever os próximos 5 dias
-    previsao = modelo_treinado.forecast(steps=passos_para_previsao)
-
-    # Exibindo a previsão
-    st.write(f"Previsões de fechamento com ARIMA para os próximos {passos_para_previsao} dias: {previsao}")
-
-    # Gerar um gráfico para as previsões
-    previsao_index = pd.date_range(start=df.index[-1], periods=passos_para_previsao + 1, freq="D")[1:]
-
-    plt.figure(figsize=(12, 6))
-
-    # Plotando o gráfico de preço real
-    plt.plot(df.index, df["Close"], label="Preço Real", color="cyan", linewidth=2)
-
-    # Plotando as previsões do ARIMA
-    plt.plot(previsao_index, previsao, label="Previsão ARIMA", color="red", linestyle="--", marker='o', markersize=8)
-
-    # Adicionando setas para indicar pontos de previsão
-    for i in range(len(previsao)):
-        plt.annotate('↑', (previsao_index[i], previsao[i]), textcoords="offset points", xytext=(0,10), ha='center', color='yellow', fontsize=15)
-
-    # Títulos e labels
-    plt.title("Previsão de Preço do BTC-USD com ARIMA", fontsize=16)
-    plt.xlabel("Data", fontsize=12)
-    plt.ylabel("Preço (USD)", fontsize=12)
-    plt.legend()
-
-    # Melhorando a estética do gráfico
-    plt.grid(True, linestyle='--', alpha=0.6)
-    plt.tight_layout()
-
-    st.pyplot(plt)
-
-
-
-
-
-
-# Histograma dos Retornos Diários
-st.subheader("Distribuição dos Retornos Diários")
-fig, ax = plt.subplots(figsize=(10,5))
-sns.histplot(df["Retorno Diário"].dropna(), bins=50, kde=True, color="purple", ax=ax)
-ax.set_title("Distribuição dos Retornos Diários da BTC-USD")
-ax.set_xlabel("Retorno Diário")
-ax.set_ylabel("Frequência")
-ax.grid()
-st.pyplot(fig)
-
-# Analisando múltiplas criptomoedas
-st.subheader("Correlação entre Criptomoedas")
-cripto = ["BTC-USD", "ETH-USD", "SOL-USD", "SHIB-USD"]
-df_crypto = yf.download(cripto, start="2023-01-20")["Close"]
-correlacao = df_crypto.pct_change().corr()
-
-fig, ax = plt.subplots(figsize=(8, 6))
-sns.heatmap(correlacao, annot=True, cmap="coolwarm", fmt=".2f", linewidths=0.5, ax=ax)
-st.pyplot(fig)
-
-# Lista de criptomoedas no portfólio
-cripto = ["BTC-USD", "ETH-USD", "SHIB-USD", "SOL-USD"]
-
-# Baixar dados de todas as criptomoedas
-df = yf.download(cripto, start="2023-01-20")
-
-# Calcular retornos diários
-retornos = df["Close"].pct_change().dropna()  # Utilizando apenas o 'Close' para calcular os retornos
-
-# Definir pesos do portfólio (exemplo: 25% para cada cripto)
-pesos = np.array([0.25, 0.25, 0.25, 0.25])
-
-# Calcular retorno esperado do portfólio
-retorno_esperado = np.sum(retornos.mean() * pesos) * 252  # 252 dias úteis no ano
-
-# Calcular risco do portfólio (desvio padrão anualizado)
-cov_matriz = retornos.cov() * 252
-risco_portfolio = np.sqrt(np.dot(pesos.T, np.dot(cov_matriz, pesos)))
-
-# Exibir resultados
-st.write(f"Retorno Esperado do Portfólio: {retorno_esperado:.2%}")
-st.write(f"Risco (Volatilidade) do Portfólio: {risco_portfolio:.2%}")
-
-# Simulação de múltiplos portfólios
-np.random.seed(42)  # Garantir resultados consistentes
-n_portfolios = 10000
-resultados = np.zeros((3, n_portfolios))
-
-for i in range(n_portfolios):
-    pesos = np.random.random(len(cripto))  # Gerar pesos aleatórios
-    pesos /= np.sum(pesos)  # Normalizar para que a soma seja 1
-
-    # Calcular retorno e risco do portfólio
-    retorno_portfolio = np.sum(retornos.mean() * pesos) * 252  # 252 dias úteis no ano
-    cov_matriz = retornos.cov() * 252
-    risco_portfolio = np.sqrt(np.dot(pesos.T, np.dot(cov_matriz, pesos)))
-
-    # Armazenar resultados
-    resultados[0, i] = retorno_portfolio
-    resultados[1, i] = risco_portfolio
-    resultados[2, i] = resultados[0, i] / resultados[1, i]  # Sharpe ratio
-
-# Converter resultados em DataFrame
-portfolios = pd.DataFrame(resultados.T, columns=["Retorno", "Risco", "Sharpe"])
-
-# Melhor portfólio (máximo Sharpe ratio)
-melhor_portfolio = portfolios.loc[portfolios["Sharpe"].idxmax()]
-
-# Plotar os portfólios simulados
-st.subheader("Otimização de Portfólio: Fronteira Eficiente")
-fig, ax = plt.subplots(figsize=(10,6))
-ax.scatter(portfolios["Risco"], portfolios["Retorno"], c=portfolios["Sharpe"], cmap="viridis", marker="o")
-ax.set_title("Otimização de Portfólio: Fronteira Eficiente")
-ax.set_xlabel("Risco (Volatilidade)")
-ax.set_ylabel("Retorno Esperado")
-fig.colorbar(ax.collections[0], ax=ax, label="Sharpe Ratio")
-
-# Destacar o portfólio ótimo (máximo Sharpe)
-ax.scatter(melhor_portfolio["Risco"], melhor_portfolio["Retorno"], color="red", marker="*", s=200, label="Melhor Portfólio")
-ax.legend()
-ax.grid()
-st.pyplot(fig)
-
-# Exibir o melhor portfólio
-st.write("Melhor Portfólio (Máximo Sharpe Ratio):")
-st.write(f"Retorno: {melhor_portfolio['Retorno']:.2%}")
-st.write(f"Risco: {melhor_portfolio['Risco']:.2%}")
-st.write(f"Sharpe Ratio: {melhor_portfolio['Sharpe']:.2f}")
-
+if __name__ == "__main__":
+    main()
