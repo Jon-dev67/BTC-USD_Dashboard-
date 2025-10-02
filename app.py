@@ -37,12 +37,6 @@ st.markdown("""
         margin-bottom: 1rem;
         font-weight: 800;
     }
-    .sub-header {
-        font-size: 1.4rem;
-        color: #666;
-        text-align: center;
-        margin-bottom: 2rem;
-    }
     .response-card {
         background: linear-gradient(135deg, #f8fffd, #e8f5e9);
         border-left: 6px solid #2e7d32;
@@ -59,42 +53,6 @@ st.markdown("""
         border-radius: 12px;
         box-shadow: 0 4px 12px rgba(0,0,0,0.1);
     }
-    .insight-card {
-        background: linear-gradient(135deg, #e3f2fd, #bbdefb);
-        border-left: 6px solid #2196f3;
-        padding: 1.5rem;
-        margin: 1rem 0;
-        border-radius: 12px;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-    }
-    .token-status {
-        padding: 8px 16px;
-        border-radius: 20px;
-        font-size: 0.9rem;
-        font-weight: bold;
-        text-align: center;
-    }
-    .status-valid {
-        background: linear-gradient(135deg, #4caf50, #66bb6a);
-        color: white;
-    }
-    .status-expired {
-        background: linear-gradient(135deg, #ff9800, #ffb74d);
-        color: white;
-    }
-    .status-error {
-        background: linear-gradient(135deg, #f44336, #ef5350);
-        color: white;
-    }
-    .credential-box {
-        background: #1a1a1a;
-        padding: 15px;
-        border-radius: 8px;
-        border-left: 4px solid #2196f3;
-        font-family: 'Courier New', monospace;
-        font-size: 0.8rem;
-        color: #00ff00;
-    }
     .metric-card {
         background: linear-gradient(135deg, #2c3e50, #34495e);
         padding: 20px;
@@ -103,27 +61,25 @@ st.markdown("""
         text-align: center;
         box-shadow: 0 4px 12px rgba(0,0,0,0.2);
     }
-    .stTabs [data-baseweb="tab-list"] {
-        gap: 8px;
+    .user-message {
+        background: linear-gradient(135deg, #e3f2fd, #bbdefb);
+        padding: 1rem;
+        border-radius: 15px;
+        margin: 0.5rem 0;
+        border: 1px solid #90caf9;
     }
-    .stTabs [data-baseweb="tab"] {
-        height: 50px;
-        white-space: pre-wrap;
-        background-color: #f0f2f6;
-        border-radius: 8px 8px 0px 0px;
-        gap: 8px;
-        padding-top: 10px;
-        padding-bottom: 10px;
-    }
-    .stTabs [aria-selected="true"] {
-        background-color: #2e7d32;
-        color: white;
+    .assistant-message {
+        background: linear-gradient(135deg, #e8f5e9, #c8e6c9);
+        padding: 1rem;
+        border-radius: 15px;
+        margin: 0.5rem 0;
+        border: 1px solid #a5d6a7;
     }
 </style>
 """, unsafe_allow_html=True)
 
 # ================================
-# CONFIGURAÇÕES DO BANCO DE DADOS
+# CONFIGURAÇÕES
 # ================================
 DB_CONFIG = {
     "host": "dpg-d361csili9vc738rea90-a.oregon-postgres.render.com",
@@ -134,7 +90,338 @@ DB_CONFIG = {
 }
 
 # ================================
-# CLASSES PRINCIPAIS
+# SISTEMA UNIFICADO DE IA
+# ================================
+class AgroIntelligentAssistant:
+    def __init__(self):
+        self.db = AgroDatabase()
+        self.embrapa_api = EmbrapaAPI()
+        self.conversation_history = []
+    
+    def get_business_context(self):
+        """Obtém todos os dados do negócio para contexto"""
+        productions = self.db.load_productions()
+        inputs = self.db.load_inputs()
+        price_config = self.db.load_price_config()
+        
+        context = {
+            "has_data": not productions.empty,
+            "productions": [],
+            "financial_summary": {},
+            "insights": []
+        }
+        
+        if not productions.empty:
+            # Resumo das produções
+            context["productions"] = productions.to_dict('records')
+            
+            # Análise financeira
+            total_first_quality = productions['first_quality'].sum()
+            total_second_quality = productions['second_quality'].sum()
+            total_production = total_first_quality + total_second_quality
+            
+            # Cálculo de receitas
+            revenue = 0
+            for _, row in productions.iterrows():
+                product = row['product']
+                price_row = price_config[price_config['product'] == product]
+                first_price = price_row['first_quality_price'].values[0] if not price_row.empty else 10.0
+                second_price = price_row['second_quality_price'].values[0] if not price_row.empty else 5.0
+                revenue += row['first_quality'] * first_price + row['second_quality'] * second_price
+            
+            total_costs = inputs['cost'].sum() if not inputs.empty else 0
+            profit = revenue - total_costs
+            profit_margin = (profit / revenue * 100) if revenue > 0 else 0
+            
+            context["financial_summary"] = {
+                "total_revenue": revenue,
+                "total_costs": total_costs,
+                "profit": profit,
+                "profit_margin": profit_margin,
+                "total_production": total_production,
+                "first_quality_percent": (total_first_quality / total_production * 100) if total_production > 0 else 0
+            }
+            
+            # Insights
+            if profit_margin < 20:
+                context["insights"].append("Margem de lucro pode ser melhorada")
+            if context["financial_summary"]["first_quality_percent"] < 60:
+                context["insights"].append("Percentual de 1ª qualidade abaixo do ideal")
+            
+            # Cultura principal
+            main_crop = productions.groupby('product')['first_quality'].sum().idxmax()
+            context["main_crop"] = main_crop
+            
+        return context
+    
+    def search_embrapa_knowledge(self, query):
+        """Busca conhecimento científico na Embrapa"""
+        try:
+            results = self.embrapa_api.search_all_books(query, size=3)
+            if "error" in results or not results.get('hits', {}).get('hits'):
+                return "Não encontrei informações específicas na base científica da Embrapa para esta pergunta."
+            
+            # Processar resultados
+            knowledge = []
+            for hit in results['hits']['hits'][:3]:
+                source = hit['_source']
+                knowledge.append({
+                    'pergunta': source.get('question', ''),
+                    'resposta': source.get('answer', '')[:300] + "...",
+                    'livro': source.get('book', ''),
+                    'relevancia': hit.get('_score', 0)
+                })
+            
+            return knowledge
+        except Exception as e:
+            return f"Erro ao acessar base científica: {str(e)}"
+    
+    def generate_intelligent_response(self, user_message):
+        """Gera resposta inteligente integrando todos os dados"""
+        
+        # Obter contexto do negócio
+        business_context = self.get_business_context()
+        
+        # Buscar conhecimento científico
+        scientific_knowledge = self.search_embrapa_knowledge(user_message)
+        
+        # Construir prompt contextual
+        prompt = self._build_contextual_prompt(user_message, business_context, scientific_knowledge)
+        
+        # Gerar resposta (aqui usaremos uma lógica inteligente de templates)
+        response = self._generate_contextual_response(prompt, business_context, scientific_knowledge)
+        
+        # Atualizar histórico
+        self.conversation_history.append({
+            "user": user_message,
+            "assistant": response,
+            "timestamp": datetime.now()
+        })
+        
+        return response
+    
+    def _build_contextual_prompt(self, user_message, business_context, scientific_knowledge):
+        """Constrói o prompt contextual para a resposta"""
+        
+        prompt_parts = []
+        
+        # Contexto do negócio
+        if business_context["has_data"]:
+            financial = business_context["financial_summary"]
+            prompt_parts.append(f"""
+            CONTEXTO DO NEGÓCIO:
+            - Cultura principal: {business_context.get('main_crop', 'Não identificada')}
+            - Produção total: {financial['total_production']:.0f} caixas
+            - Receita: R$ {financial['total_revenue']:.2f}
+            - Custos: R$ {financial['total_costs']:.2f}
+            - Lucro: R$ {financial['profit']:.2f}
+            - Margem: {financial['profit_margin']:.1f}%
+            - Qualidade 1ª: {financial['first_quality_percent']:.1f}%
+            - Insights: {', '.join(business_context['insights']) if business_context['insights'] else 'Nenhum insight crítico'}
+            """)
+        else:
+            prompt_parts.append("CONTEXTO DO NEGÓCIO: Nenhum dado de produção cadastrado ainda.")
+        
+        # Conhecimento científico
+        if isinstance(scientific_knowledge, list) and scientific_knowledge:
+            sci_text = "CONHECIMENTO CIENTÍFICO EMBRAPA:\n"
+            for i, knowledge in enumerate(scientific_knowledge, 1):
+                sci_text += f"""
+                {i}. {knowledge['pergunta']}
+                   Resposta: {knowledge['resposta']}
+                   Fonte: {knowledge['livro']} (Relevância: {knowledge['relevancia']:.1f})
+                """
+            prompt_parts.append(sci_text)
+        else:
+            prompt_parts.append("CONHECIMENTO CIENTÍFICO: " + str(scientific_knowledge))
+        
+        prompt_parts.append(f"PERGUNTA DO USUÁRIO: {user_message}")
+        
+        return "\n".join(prompt_parts)
+    
+    def _generate_contextual_response(self, prompt, business_context, scientific_knowledge):
+        """Gera resposta contextual integrando todas as informações"""
+        
+        # Análise da pergunta do usuário
+        user_question = prompt.split("PERGUNTA DO USUÁRIO: ")[-1].lower()
+        
+        # Resposta baseada no tipo de pergunta
+        if any(word in user_question for word in ['como', 'fazer', 'procedimento']):
+            return self._generate_how_to_response(user_question, business_context, scientific_knowledge)
+        elif any(word in user_question for word in ['quanto', 'custo', 'preço', 'financeiro']):
+            return self._generate_financial_response(user_question, business_context, scientific_knowledge)
+        elif any(word in user_question for word in ['qualidade', 'produtividade', 'rendimento']):
+            return self._generate_quality_response(user_question, business_context, scientific_knowledge)
+        elif any(word in user_question for word in ['problema', 'doença', 'praga']):
+            return self._generate_problem_response(user_question, business_context, scientific_knowledge)
+        else:
+            return self._generate_general_response(user_question, business_context, scientific_knowledge)
+    
+    def _generate_how_to_response(self, question, business_context, scientific_knowledge):
+        """Gera resposta para perguntas de procedimento"""
+        
+        response_parts = ["🌱 **Orientação Técnica Personalizada**\n\n"]
+        
+        # Adicionar conhecimento científico
+        if isinstance(scientific_knowledge, list) and scientific_knowledge:
+            response_parts.append("**Base Científica Embrapa:**")
+            for knowledge in scientific_knowledge:
+                response_parts.append(f"📚 {knowledge['resposta']}")
+            response_parts.append("")
+        
+        # Adicionar contexto do negócio
+        if business_context["has_data"]:
+            financial = business_context["financial_summary"]
+            response_parts.append("**Contexto do Seu Negócio:**")
+            response_parts.append(f"• Sua produção atual: {financial['total_production']:.0f} caixas")
+            response_parts.append(f"• Margem atual: {financial['profit_margin']:.1f}%")
+            
+            if financial['first_quality_percent'] < 60:
+                response_parts.append("• 💡 **Oportunidade**: Você pode aumentar a qualidade 1ª para melhorar seus rendimentos")
+            
+            if financial['profit_margin'] < 15:
+                response_parts.append("• 💰 **Alerta**: Sua margem está baixa - considere otimizar custos")
+        
+        response_parts.append("\n**Próximos Passos Recomendados:**")
+        response_parts.append("1. Implemente as práticas recomendadas pela Embrapa")
+        response_parts.append("2. Monitore os resultados semanalmente")
+        response_parts.append("3. Ajuste conforme as condições locais")
+        
+        return "\n".join(response_parts)
+    
+    def _generate_financial_response(self, question, business_context, scientific_knowledge):
+        """Gera resposta para perguntas financeiras"""
+        
+        response_parts = ["💰 **Análise Financeira**\n\n"]
+        
+        if business_context["has_data"]:
+            financial = business_context["financial_summary"]
+            
+            response_parts.append("**Seu Desempenho Atual:**")
+            response_parts.append(f"• 📈 **Receita Total**: R$ {financial['total_revenue']:,.2f}")
+            response_parts.append(f"• 💸 **Custos Totais**: R$ {financial['total_costs']:,.2f}")
+            response_parts.append(f"• 🎯 **Lucro Líquido**: R$ {financial['profit']:,.2f}")
+            response_parts.append(f"• 📊 **Margem de Lucro**: {financial['profit_margin']:.1f}%")
+            response_parts.append(f"• 🌟 **Qualidade 1ª**: {financial['first_quality_percent']:.1f}% da produção")
+            
+            # Recomendações baseadas nos dados
+            response_parts.append("\n**💡 Recomendações Financeiras:**")
+            
+            if financial['profit_margin'] < 10:
+                response_parts.append("• **Ação Urgente**: Sua margem está crítica. Reveja custos e preços")
+            elif financial['profit_margin'] < 20:
+                response_parts.append("• **Otimização**: Há espaço para melhorar a margem. Foque em eficiência")
+            else:
+                response_parts.append("• **Excelente**: Margem saudável! Mantenha o bom trabalho")
+            
+            if financial['first_quality_percent'] < 50:
+                response_parts.append("• **Qualidade**: Invista em práticas que aumentem a 1ª qualidade - tem alto retorno")
+                
+        else:
+            response_parts.append("📊 **Para análises financeiras precisas, cadastre seus dados de produção e custos.**")
+        
+        # Adicionar conhecimento científico se relevante
+        if isinstance(scientific_knowledge, list) and scientific_knowledge:
+            response_parts.append("\n**Conhecimento Científico Aplicável:**")
+            for knowledge in scientific_knowledge[:2]:
+                response_parts.append(f"• {knowledge['resposta']}")
+        
+        return "\n".join(response_parts)
+    
+    def _generate_quality_response(self, question, business_context, scientific_knowledge):
+        """Gera resposta para perguntas sobre qualidade"""
+        
+        response_parts = ["🎯 **Gestão de Qualidade**\n\n"]
+        
+        if business_context["has_data"]:
+            financial = business_context["financial_summary"]
+            
+            response_parts.append(f"**Seu Desempenho de Qualidade:**")
+            response_parts.append(f"• {financial['first_quality_percent']:.1f}% da sua produção é 1ª qualidade")
+            
+            if financial['first_quality_percent'] >= 70:
+                response_parts.append("• ✅ **Excelente**! Sua qualidade está acima da média")
+            elif financial['first_quality_percent'] >= 50:
+                response_parts.append("• ⚠️ **Bom**, mas pode melhorar. Há espaço para crescimento")
+            else:
+                response_parts.append("• 🔄 **Precisa melhorar**. Foque em práticas que elevem a qualidade")
+        
+        # Conhecimento científico sobre qualidade
+        if isinstance(scientific_knowledge, list) and scientific_knowledge:
+            response_parts.append("\n**Técnicas Comprovadas para Qualidade:**")
+            for knowledge in scientific_knowledge:
+                response_parts.append(f"• {knowledge['resposta']}")
+        else:
+            response_parts.append("\n**Dicas Gerais para Melhorar Qualidade:**")
+            response_parts.append("• Colha no ponto certo")
+            response_parts.append("• Maneje adequadamente o solo")
+            response_parts.append("• Controle pragas e doenças preventivamente")
+            response_parts.append("• Invista em boas sementes/mudas")
+        
+        return "\n".join(response_parts)
+    
+    def _generate_problem_response(self, question, business_context, scientific_knowledge):
+        """Gera resposta para problemas e doenças"""
+        
+        response_parts = ["🔍 **Análise de Problemas**\n\n"]
+        
+        response_parts.append("**Com base no conhecimento científico da Embrapa:**")
+        
+        if isinstance(scientific_knowledge, list) and scientific_knowledge:
+            for knowledge in scientific_knowledge:
+                response_parts.append(f"• {knowledge['resposta']}")
+        else:
+            response_parts.append("• Consulte um técnico agrícola para diagnóstico preciso")
+            response_parts.append("• Coletar amostras para análise")
+            response_parts.append("• Documentar sintomas e condições climáticas")
+        
+        response_parts.append("\n**Ações Recomendadas:**")
+        response_parts.append("1. Identifique corretamente o problema")
+        response_parts.append("2. Siga as recomendações técnicas validadas")
+        response_parts.append("3. Monitore a evolução")
+        response_parts.append("4. Registre os resultados para aprendizado futuro")
+        
+        if business_context["has_data"]:
+            response_parts.append(f"\n💡 **Contexto da sua lavoura**: Você cultiva {business_context.get('main_crop', 'diversas culturas')}")
+        
+        return "\n".join(response_parts)
+    
+    def _generate_general_response(self, question, business_context, scientific_knowledge):
+        """Gera resposta para perguntas gerais"""
+        
+        response_parts = ["🌾 **Assistência Agrícola Integral**\n\n"]
+        
+        # Conhecimento científico
+        if isinstance(scientific_knowledge, list) and scientific_knowledge:
+            response_parts.append("**Conhecimento Científico da Embrapa:**")
+            for knowledge in scientific_knowledge:
+                response_parts.append(f"• {knowledge['resposta']}")
+        else:
+            response_parts.append("• Estou aqui para ajudar com questões agrícolas baseadas em ciência")
+        
+        # Contexto do negócio
+        if business_context["has_data"]:
+            financial = business_context["financial_summary"]
+            response_parts.append(f"\n**Resumo do Seu Negócio:**")
+            response_parts.append(f"• Produção: {financial['total_production']:.0f} caixas")
+            response_parts.append(f"• Lucro: R$ {financial['profit']:,.2f}")
+            response_parts.append(f"• Margem: {financial['profit_margin']:.1f}%")
+            
+            if business_context["insights"]:
+                response_parts.append(f"\n**Insights Importantes:**")
+                for insight in business_context["insights"]:
+                    response_parts.append(f"• {insight}")
+        
+        response_parts.append("\n**Como posso ajudar mais?** Pode me perguntar sobre:")
+        response_parts.append("• Técnicas de plantio e manejo")
+        response_parts.append("• Análise financeira da sua produção")
+        response_parts.append("• Solução de problemas na lavoura")
+        response_parts.append("• Melhoria de qualidade e produtividade")
+        
+        return "\n".join(response_parts)
+
+# ================================
+# CLASSES DE SUPORTE (MANTIDAS)
 # ================================
 class EmbrapaAuth:
     def __init__(self):
@@ -152,12 +439,10 @@ class EmbrapaAuth:
             "Authorization": f"Basic {self.base64_credentials}",
             "Content-Type": "application/x-www-form-urlencoded"
         }
-        
         data = {"grant_type": "client_credentials"}
         
         try:
             response = requests.post(self.token_url, headers=headers, data=data, timeout=30)
-            
             if response.status_code == 200:
                 token_data = response.json()
                 return {
@@ -167,74 +452,11 @@ class EmbrapaAuth:
                     "timestamp": datetime.now()
                 }
             else:
-                st.error(f"❌ Erro na autenticação: {response.status_code}")
                 return None
-                
-        except Exception as e:
-            st.error(f"🚫 Erro de conexão: {e}")
+        except Exception:
             return None
 
-class AgroDatabase:
-    def __init__(self):
-        self.config = DB_CONFIG
-    
-    def get_connection(self):
-        try:
-            conn = psycopg2.connect(**self.config)
-            return conn
-        except Exception as e:
-            st.error(f"❌ Erro ao conectar com o banco: {str(e)}")
-            return None
-    
-    def load_productions(self):
-        conn = self.get_connection()
-        if conn is None:
-            return pd.DataFrame()
-        
-        try:
-            query = """
-            SELECT * FROM productions 
-            ORDER BY date DESC
-            """
-            df = pd.read_sql_query(query, conn)
-            return df
-        except Exception as e:
-            st.error(f"❌ Erro ao carregar produções: {str(e)}")
-            return pd.DataFrame()
-        finally:
-            conn.close()
-    
-    def load_inputs(self):
-        conn = self.get_connection()
-        if conn is None:
-            return pd.DataFrame()
-        
-        try:
-            query = "SELECT * FROM inputs ORDER BY date DESC"
-            df = pd.read_sql_query(query, conn)
-            return df
-        except Exception as e:
-            st.error(f"❌ Erro ao carregar insumos: {str(e)}")
-            return pd.DataFrame()
-        finally:
-            conn.close()
-    
-    def load_price_config(self):
-        conn = self.get_connection()
-        if conn is None:
-            return pd.DataFrame()
-        
-        try:
-            query = "SELECT * FROM price_config"
-            df = pd.read_sql_query(query, conn)
-            return df
-        except Exception as e:
-            st.error(f"❌ Erro ao carregar preços: {str(e)}")
-            return pd.DataFrame()
-        finally:
-            conn.close()
-
-class RespondeAgroAPI:
+class EmbrapaAPI:
     def __init__(self):
         self.base_url = "https://api.cnptia.embrapa.br/respondeagro/v1"
         self.auth = EmbrapaAuth()
@@ -245,7 +467,6 @@ class RespondeAgroAPI:
         if self.access_token and self.token_expiry:
             if datetime.now() < self.token_expiry - timedelta(seconds=300):
                 return True
-        
         token_data = self.auth.get_access_token()
         if token_data:
             self.access_token = token_data["access_token"]
@@ -254,7 +475,7 @@ class RespondeAgroAPI:
             return True
         return False
     
-    def make_request(self, payload, endpoint="_search/template"):
+    def search_all_books(self, query, size=5):
         if not self.ensure_valid_token():
             return {"error": "Falha na autenticação"}
             
@@ -263,25 +484,6 @@ class RespondeAgroAPI:
             "Content-Type": "application/json"
         }
         
-        try:
-            url = f"{self.base_url}/{endpoint}"
-            response = requests.post(url, headers=headers, json=payload, timeout=30)
-            
-            if response.status_code == 200:
-                return response.json()
-            elif response.status_code == 401:
-                self.access_token = None
-                return self.make_request(payload, endpoint)
-            else:
-                return {
-                    "error": f"Erro {response.status_code}",
-                    "details": response.text
-                }
-                
-        except requests.exceptions.RequestException as e:
-            return {"error": f"Erro de conexão: {str(e)}"}
-    
-    def search_all_books(self, query, size=5):
         payload = {
             "id": "query_all",
             "params": {
@@ -290,508 +492,179 @@ class RespondeAgroAPI:
                 "size": size
             }
         }
-        return self.make_request(payload)
-    
-    def search_specific_book(self, query, book_id, size=3):
-        payload = {
-            "id": "query_one_book",
-            "params": {
-                "query_string": query,
-                "book_id": book_id,
-                "from": 0,
-                "size": size
-            }
-        }
-        return self.make_request(payload)
-    
-    def get_token_status(self):
-        if self.access_token and self.token_expiry:
-            time_left = self.token_expiry - datetime.now()
-            minutes_left = max(0, int(time_left.total_seconds() / 60))
-            return {
-                "status": "valid" if minutes_left > 5 else "expiring",
-                "minutes_left": minutes_left,
-                "token": self.access_token[:20] + "..." if self.access_token else None
-            }
-        return {"status": "no_token", "minutes_left": 0}
+        
+        try:
+            url = f"{self.base_url}/_search/template"
+            response = requests.post(url, headers=headers, json=payload, timeout=30)
+            return response.json() if response.status_code == 200 else {"error": f"Erro {response.status_code}"}
+        except Exception as e:
+            return {"error": f"Erro de conexão: {str(e)}"}
 
-class AgroAnalytics:
-    def __init__(self, database):
-        self.db = database
+class AgroDatabase:
+    def __init__(self):
+        self.config = DB_CONFIG
     
-    def calculate_financials(self, productions_df, inputs_df):
-        price_config = self.db.load_price_config()
-        
-        if productions_df.empty:
-            return {
-                "total_revenue": 0,
-                "first_quality_revenue": 0,
-                "second_quality_revenue": 0,
-                "total_costs": 0,
-                "profit": 0,
-                "profit_margin": 0
-            }
-        
-        revenue_data = []
-        for _, row in productions_df.iterrows():
-            product = row['product']
-            price_row = price_config[price_config['product'] == product]
-            
-            if not price_row.empty:
-                first_price = price_row['first_quality_price'].values[0]
-                second_price = price_row['second_quality_price'].values[0]
-            else:
-                first_price, second_price = 10.0, 5.0
-            
-            first_revenue = row['first_quality'] * first_price
-            second_revenue = row['second_quality'] * second_price
-            
-            revenue_data.append({
-                'product': product,
-                'first_revenue': first_revenue,
-                'second_revenue': second_revenue,
-                'total_revenue': first_revenue + second_revenue
-            })
-        
-        revenue_df = pd.DataFrame(revenue_data)
-        total_revenue = revenue_df['total_revenue'].sum()
-        first_quality_revenue = revenue_df['first_revenue'].sum()
-        second_quality_revenue = revenue_df['second_revenue'].sum()
-        
-        total_costs = inputs_df['cost'].sum() if not inputs_df.empty else 0
-        profit = total_revenue - total_costs
-        profit_margin = (profit / total_revenue * 100) if total_revenue > 0 else 0
-        
-        return {
-            "total_revenue": total_revenue,
-            "first_quality_revenue": first_quality_revenue,
-            "second_quality_revenue": second_quality_revenue,
-            "total_costs": total_costs,
-            "profit": profit,
-            "profit_margin": profit_margin
-        }
+    def get_connection(self):
+        try:
+            return psycopg2.connect(**self.config)
+        except Exception as e:
+            st.error(f"❌ Erro ao conectar com o banco: {str(e)}")
+            return None
     
-    def generate_business_insights(self, productions_df, inputs_df):
-        """Gera insights inteligentes baseados nos dados do negócio"""
-        insights = []
-        
-        if productions_df.empty:
-            return ["📊 Adicione dados de produção para gerar insights"]
-        
-        # Análise de produtividade
-        total_production = productions_df['first_quality'].sum() + productions_df['second_quality'].sum()
-        avg_daily_production = total_production / len(productions_df['date'].unique())
-        
-        insights.append(f"📈 **Produtividade Média Diária**: {avg_daily_production:.1f} caixas/dia")
-        
-        # Análise de qualidade
-        first_quality_percent = (productions_df['first_quality'].sum() / total_production * 100) if total_production > 0 else 0
-        insights.append(f"🎯 **Qualidade Premium**: {first_quality_percent:.1f}% da produção é 1ª qualidade")
-        
-        # Análise financeira
-        financials = self.calculate_financials(productions_df, inputs_df)
-        insights.append(f"💰 **Lucratividade**: Margem de {financials['profit_margin']:.1f}%")
-        
-        # Análise por cultura
-        best_product = productions_df.groupby('product')['first_quality'].sum().idxmax() if not productions_df.empty else "N/A"
-        insights.append(f"🏆 **Cultura Mais Rentável**: {best_product}")
-        
-        # Análise temporal
-        if len(productions_df) > 1:
-            productions_df['date'] = pd.to_datetime(productions_df['date'])
-            monthly_trend = productions_df.groupby(productions_df['date'].dt.to_period('M'))['first_quality'].sum()
-            if len(monthly_trend) > 1:
-                trend = "📈 Crescente" if monthly_trend.iloc[-1] > monthly_trend.iloc[-2] else "📉 Decrescente"
-                insights.append(f"🕒 **Tendência Mensal**: {trend}")
-        
-        return insights
-    
-    def generate_recommendations(self, productions_df, inputs_df):
-        """Gera recomendações inteligentes baseadas nos dados"""
-        recommendations = []
-        
-        if productions_df.empty:
-            return ["💡 Comece registrando suas produções para receber recomendações personalizadas"]
-        
-        # Análise de eficiência
-        total_costs = inputs_df['cost'].sum() if not inputs_df.empty else 0
-        total_production = productions_df['first_quality'].sum() + productions_df['second_quality'].sum()
-        
-        if total_production > 0 and total_costs > 0:
-            cost_per_box = total_costs / total_production
-            recommendations.append(f"💰 **Custo por Caixa**: R$ {cost_per_box:.2f} - Otimize seus insumos")
-        
-        # Análise de qualidade
-        first_quality_ratio = productions_df['first_quality'].sum() / total_production if total_production > 0 else 0
-        if first_quality_ratio < 0.7:
-            recommendations.append("🎯 **Melhore a Qualidade**: Considere ajustes no manejo para aumentar a 1ª qualidade")
-        
-        # Análise de diversificação
-        unique_products = productions_df['product'].nunique()
-        if unique_products < 3:
-            recommendations.append("🌱 **Diversificação**: Considere expandir para mais culturas para reduzir riscos")
-        
-        # Análise climática
-        if 'temperature' in productions_df.columns:
-            avg_temp = productions_df['temperature'].mean()
-            if avg_temp > 30:
-                recommendations.append("🌡️ **Temperatura Alta**: Considere estratégias de resfriamento para as culturas")
-        
-        return recommendations
-
-# ================================
-# FUNÇÕES DE VISUALIZAÇÃO
-# ================================
-def display_embrapa_result(hit, index):
-    """Exibe um resultado formatado da Embrapa"""
-    source = hit['_source']
-    score = hit.get('_score', 0)
-    
-    with st.container():
-        col1, col2 = st.columns([4, 1])
-        with col1:
-            st.markdown(f"### ❓ {source['question']}")
-        with col2:
-            st.metric("Relevância", f"{score:.1f}")
-        
-        col1, col2, col3, col4 = st.columns(4)
-        with col1:
-            st.caption(f"**📚 Livro:** {source['book']}")
-        with col2:
-            st.caption(f"**📖 Capítulo:** {source['chapter']}")
-        with col3:
-            st.caption(f"**🔢 Questão:** #{source['question_number']}")
-        with col4:
-            st.caption(f"**📅 Ano:** {source['year']}")
-        
-        st.markdown('<div class="response-card">', unsafe_allow_html=True)
-        st.markdown("**💡 Resposta Embrapa:**")
-        st.markdown(source['answer'], unsafe_allow_html=True)
-        st.markdown('</div>', unsafe_allow_html=True)
-        
-        with st.expander("📎 Recursos Adicionais"):
-            col1, col2 = st.columns(2)
-            with col1:
-                if source.get('pdf'):
-                    st.markdown(f"**[📄 PDF Completo]({source['pdf']})**")
-            with col2:
-                if source.get('epub'):
-                    st.markdown(f"**[📱 Versão EPUB]({source['epub']})**")
-        
-        st.markdown("---")
-
-def create_production_dashboard(productions_df, inputs_df, analytics):
-    """Cria dashboard interativo de produção"""
-    
-    if productions_df.empty:
-        st.warning("📊 Adicione dados de produção para visualizar o dashboard")
-        return
-    
-    # Métricas principais
-    financials = analytics.calculate_financials(productions_df, inputs_df)
-    
-    col1, col2, col3, col4 = st.columns(4)
-    
-    with col1:
-        total_boxes = productions_df['first_quality'].sum() + productions_df['second_quality'].sum()
-        st.markdown('<div class="metric-card">', unsafe_allow_html=True)
-        st.metric("📦 Total Produzido", f"{total_boxes:,.0f} cx")
-        st.markdown('</div>', unsafe_allow_html=True)
-    
-    with col2:
-        st.markdown('<div class="metric-card">', unsafe_allow_html=True)
-        st.metric("💰 Receita Total", f"R$ {financials['total_revenue']:,.2f}")
-        st.markdown('</div>', unsafe_allow_html=True)
-    
-    with col3:
-        st.markdown('<div class="metric-card">', unsafe_allow_html=True)
-        st.metric("💸 Custos Totais", f"R$ {financials['total_costs']:,.2f}")
-        st.markdown('</div>', unsafe_allow_html=True)
-    
-    with col4:
-        st.markdown('<div class="metric-card">', unsafe_allow_html=True)
-        st.metric("🎯 Lucro Líquido", f"R$ {financials['profit']:,.2f}", f"{financials['profit_margin']:.1f}%")
-        st.markdown('</div>', unsafe_allow_html=True)
-    
-    # Gráficos
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.subheader("📊 Produção por Cultura")
-        production_by_product = productions_df.groupby('product')[['first_quality', 'second_quality']].sum()
-        production_by_product['total'] = production_by_product['first_quality'] + production_by_product['second_quality']
-        
-        fig = px.bar(production_by_product.reset_index(), x='product', y='total',
-                     color='product', color_discrete_sequence=px.colors.qualitative.Set3)
-        fig.update_layout(showlegend=False, plot_bgcolor='rgba(0,0,0,0)', 
-                         paper_bgcolor='rgba(0,0,0,0)', font=dict(color='white'))
-        st.plotly_chart(fig, use_container_width=True)
-    
-    with col2:
-        st.subheader("🎯 Qualidade por Cultura")
-        quality_data = []
-        for product in productions_df['product'].unique():
-            product_data = productions_df[productions_df['product'] == product]
-            total = product_data['first_quality'].sum() + product_data['second_quality'].sum()
-            first_percent = (product_data['first_quality'].sum() / total * 100) if total > 0 else 0
-            second_percent = (product_data['second_quality'].sum() / total * 100) if total > 0 else 0
-            
-            quality_data.append({
-                'product': product,
-                '1ª Qualidade': first_percent,
-                '2ª Qualidade': second_percent
-            })
-        
-        quality_df = pd.DataFrame(quality_data)
-        fig = px.bar(quality_df, x='product', y=['1ª Qualidade', '2ª Qualidade'], 
-                     barmode='stack', color_discrete_sequence=['#2ecc71', '#f1c40f'])
-        fig.update_layout(plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)',
-                         font=dict(color='white'), yaxis_title="Percentual (%)")
-        st.plotly_chart(fig, use_container_width=True)
-
-# ================================
-# PÁGINAS PRINCIPAIS
-# ================================
-def show_ai_assistant(api, db, analytics):
-    """Página principal do assistente IA"""
-    
-    st.markdown('<h1 class="main-header">🧠 AgroAssistente IA Inteligente</h1>', unsafe_allow_html=True)
-    st.markdown('<div class="sub-header">Conhecimento Científico da Embrapa + Análise de Dados do Seu Negócio</div>', unsafe_allow_html=True)
-    
-    # Carregar dados do negócio
-    productions_df = db.load_productions()
-    inputs_df = db.load_inputs()
-    
-    # Sidebar com análises do negócio
-    with st.sidebar:
-        st.header("📈 Análise do Seu Negócio")
-        
-        if not productions_df.empty:
-            insights = analytics.generate_business_insights(productions_df, inputs_df)
-            st.markdown("### 💡 Insights do Negócio")
-            for insight in insights:
-                st.success(insight)
-            
-            recommendations = analytics.generate_recommendations(productions_df, inputs_df)
-            st.markdown("### 🎯 Recomendações")
-            for rec in recommendations:
-                st.info(rec)
-        else:
-            st.info("💼 Adicione dados de produção para insights personalizados")
-        
-        st.markdown("---")
-        st.header("🔍 Configurações de Busca")
-        
-        search_mode = st.radio(
-            "Modo de Busca:",
-            ["🔍 Todos os Livros", "📚 Livro Específico"]
-        )
-        
-        book_id = None
-        if search_mode == "📚 Livro Específico":
-            books = {
-                "Soja": "soja",
-                "Milho": "milho", 
-                "Café": "cafe",
-                "Feijão": "feijao",
-                "Algodão": "algodao",
-                "ILPF": "ilpf",
-                "Abacaxi": "abacaxi",
-                "Uva": "uva"
-            }
-            selected_book = st.selectbox("Selecione o livro:", list(books.keys()))
-            book_id = books[selected_book]
-        
-        results_size = st.slider("Número de resultados", 3, 10, 5)
-    
-    # Área de busca principal
-    tab1, tab2, tab3 = st.tabs(["🔍 Busca Inteligente", "📊 Meu Negócio", "🤖 Análise IA"])
-    
-    with tab1:
-        col1, col2 = st.columns([3, 1])
-        
-        with col1:
-            query = st.text_input(
-                "💬 **Faça sua pergunta sobre agricultura:**",
-                placeholder="Ex: Como controlar pragas? Qual adubo usar? Quando plantar?...",
-                help="Combine conhecimento científico com dados do seu negócio"
-            )
-        
-        with col2:
-            search_clicked = st.button("🚀 Buscar Conhecimento", type="primary", use_container_width=True)
-        
-        if search_clicked and query:
-            with st.spinner("🔍 Conectando ao conhecimento científico da Embrapa..."):
-                if not api.ensure_valid_token():
-                    st.error("❌ Falha na autenticação com a API Embrapa")
-                    return
-                
-                if search_mode == "🔍 Todos os Livros":
-                    results = api.search_all_books(query, results_size)
-                else:
-                    results = api.search_specific_book(query, book_id, results_size)
-                
-                if "error" in results:
-                    st.error(f"❌ Erro na busca: {results['error']}")
-                elif results and 'hits' in results and results['hits']['total']['value'] > 0:
-                    total_results = results['hits']['total']['value']
-                    st.success(f"✅ Encontradas {total_results} respostas científicas relevantes!")
-                    
-                    for i, hit in enumerate(results['hits']['hits']):
-                        display_embrapa_result(hit, i)
-                else:
-                    st.warning("🤔 Não encontramos respostas exatas. Tente reformular sua pergunta.")
-    
-    with tab2:
-        st.header("📊 Dashboard do Seu Negócio")
-        create_production_dashboard(productions_df, inputs_df, analytics)
-        
-        # Dados recentes
-        if not productions_df.empty:
-            st.subheader("📋 Produções Recentes")
-            st.dataframe(productions_df.head(10), use_container_width=True)
-    
-    with tab3:
-        st.header("🤖 Análise IA Integrada")
-        
-        if not productions_df.empty:
-            # Análise avançada
-            st.markdown('<div class="analysis-card">', unsafe_allow_html=True)
-            st.markdown("### 📈 Análise Preditiva")
-            
-            # Simulação de análise preditiva
-            financials = analytics.calculate_financials(productions_df, inputs_df)
-            
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                st.metric("📊 Tendência", "Positiva ↗️", "15%")
-            with col2:
-                st.metric("🎯 ROI Estimado", f"{(financials['profit']/financials['total_costs']*100) if financials['total_costs'] > 0 else 0:.1f}%")
-            with col3:
-                st.metric("🚀 Potencial", "Alto", "12%")
-            
-            st.markdown('</div>', unsafe_allow_html=True)
-            
-            # Recomendações específicas
-            st.markdown('<div class="insight-card">', unsafe_allow_html=True)
-            st.markdown("### 💡 Recomendações Personalizadas")
-            
-            if financials['profit_margin'] < 20:
-                st.warning("**Otimização Financeira**: Sua margem pode ser melhorada. Considere:")
-                st.write("- Negociar melhores preços com fornecedores")
-                st.write("- Aumentar a produção de 1ª qualidade")
-                st.write("- Diversificar culturas para reduzir riscos")
-            
-            first_quality_ratio = productions_df['first_quality'].sum() / (productions_df['first_quality'].sum() + productions_df['second_quality'].sum())
-            if first_quality_ratio < 0.6:
-                st.info("**Melhoria de Qualidade**: Estratégias para aumentar a 1ª qualidade:")
-                st.write("- Revisar práticas de colheita")
-                st.write("- Melhorar condições de armazenamento")
-                st.write("- Capacitar equipe em seleção")
-            
-            st.markdown('</div>', unsafe_allow_html=True)
-        else:
-            st.info("💼 Adicione dados de produção para habilitar a análise IA completa")
-
-def show_system_status(api, db):
-    """Página de status do sistema"""
-    st.header("🔧 Status do Sistema")
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.subheader("🌐 Conexão Embrapa")
-        token_status = api.get_token_status()
-        
-        if token_status["status"] == "valid":
-            st.markdown(f'<span class="token-status status-valid">✅ Token Válido</span>', unsafe_allow_html=True)
-            st.write(f"Expira em: {token_status['minutes_left']} minutos")
-        elif token_status["status"] == "expiring":
-            st.markdown(f'<span class="token-status status-expired">⚠️ Token Expirando</span>', unsafe_allow_html=True)
-            st.write(f"Expira em: {token_status['minutes_left']} minutos")
-        else:
-            st.markdown(f'<span class="token-status status-error">❌ Sem Token</span>', unsafe_allow_html=True)
-        
-        if st.button("🔄 Renovar Token Embrapa"):
-            api.access_token = None
-            st.rerun()
-    
-    with col2:
-        st.subheader("🗄️ Banco de Dados")
-        
-        # Testar conexão com o banco
-        conn = db.get_connection()
-        if conn:
-            st.success("✅ Conexão estabelecida")
-            
-            # Estatísticas do banco
-            productions_df = db.load_productions()
-            inputs_df = db.load_inputs()
-            
-            st.write(f"📊 Produções: {len(productions_df)} registros")
-            st.write(f"💰 Insumos: {len(inputs_df)} registros")
-            st.write(f"🏪 Culturas: {productions_df['product'].nunique() if not productions_df.empty else 0} tipos")
-            
+    def load_productions(self):
+        conn = self.get_connection()
+        if conn is None:
+            return pd.DataFrame()
+        try:
+            query = "SELECT * FROM productions ORDER BY date DESC"
+            df = pd.read_sql_query(query, conn)
+            return df
+        except Exception:
+            return pd.DataFrame()
+        finally:
             conn.close()
-        else:
-            st.error("❌ Falha na conexão")
     
-    # Credenciais (em expander)
-    with st.expander("🔐 Credenciais do Sistema"):
-        st.markdown("""
-        <div class="credential-box">
-        <strong>Embrapa API:</strong><br>
-        Consumer Key: DI_JQ6o06C8ktdGR0pwpuSL6f3ka<br>
-        Consumer Secret: BXmyFKVuIHlCsaUUS40Ya0bV8msa<br>
-        Token URL: https://api.cnptia.embrapa.br/token<br><br>
-        
-        <strong>Banco de Dados:</strong><br>
-        Host: dpg-d361csili9vc738rea90-a.oregon-postgres.render.com<br>
-        Database: postgresql_agro<br>
-        User: postgresql_agro_user<br>
-        Port: 5432
-        </div>
-        """, unsafe_allow_html=True)
+    def load_inputs(self):
+        conn = self.get_connection()
+        if conn is None:
+            return pd.DataFrame()
+        try:
+            query = "SELECT * FROM inputs ORDER BY date DESC"
+            df = pd.read_sql_query(query, conn)
+            return df
+        except Exception:
+            return pd.DataFrame()
+        finally:
+            conn.close()
+    
+    def load_price_config(self):
+        conn = self.get_connection()
+        if conn is None:
+            return pd.DataFrame()
+        try:
+            query = "SELECT * FROM price_config"
+            df = pd.read_sql_query(query, conn)
+            return df
+        except Exception:
+            return pd.DataFrame()
+        finally:
+            conn.close()
 
 # ================================
-# APLICAÇÃO PRINCIPAL
+# INTERFACE PRINCIPAL
 # ================================
 def main():
-    # Inicialização dos serviços
-    api = RespondeAgroAPI()
-    db = AgroDatabase()
-    analytics = AgroAnalytics(db)
+    # Inicializar assistente
+    if "assistant" not in st.session_state:
+        st.session_state.assistant = AgroIntelligentAssistant()
     
-    # Sidebar principal
-    with st.sidebar:
-        st.image("https://embrapa.br/assets/img/logo-embrapa.svg", width=150)
-        st.markdown("---")
+    assistant = st.session_state.assistant
+    
+    # Header
+    st.markdown('<h1 class="main-header">🧠 AgroAssistente IA</h1>', unsafe_allow_html=True)
+    st.markdown('<div style="text-align: center; color: #666; margin-bottom: 2rem;">Sistema Inteligente Integrado - Embrapa + Seus Dados</div>', unsafe_allow_html=True)
+    
+    # Layout principal
+    col1, col2 = st.columns([2, 1])
+    
+    with col1:
+        # Área de conversação
+        st.markdown("### 💬 Conversa com o Especialista Agrícola")
         
-        page = st.radio(
-            "Navegação Principal:",
-            ["🧠 Assistente IA", "🔧 Status do Sistema"]
+        # Exibir histórico de conversa
+        for message in assistant.conversation_history[-10:]:  # Últimas 10 mensagens
+            st.markdown(f'<div class="user-message"><strong>Você:</strong> {message["user"]}</div>', unsafe_allow_html=True)
+            st.markdown(f'<div class="assistant-message"><strong>Assistente:</strong> {message["assistant"]}</div>', unsafe_allow_html=True)
+        
+        # Input do usuário
+        user_input = st.text_area(
+            "**Faça sua pergunta sobre agricultura:**",
+            placeholder="Ex: Como melhorar minha produtividade? Qual adubo usar? Analise meus custos...",
+            height=100
         )
         
-        st.markdown("---")
-        st.markdown("### 💡 Dicas Rápidas")
-        st.info("""
-        - Combine perguntas técnicas com dados do seu negócio
-        - Use o modo específico para culturas determinadas
-        - Consulte análises preditivas regularmente
-        """)
+        col_btn1, col_btn2 = st.columns(2)
+        with col_btn1:
+            if st.button("🚀 Enviar Pergunta", use_container_width=True):
+                if user_input.strip():
+                    with st.spinner("🤔 Analisando sua pergunta com IA..."):
+                        response = assistant.generate_intelligent_response(user_input)
+                        st.rerun()
+                else:
+                    st.warning("Por favor, digite uma pergunta")
+        
+        with col_btn2:
+            if st.button("🔄 Nova Conversa", use_container_width=True):
+                assistant.conversation_history = []
+                st.rerun()
     
-    # Navegação entre páginas
-    if page == "🧠 Assistente IA":
-        show_ai_assistant(api, db, analytics)
-    elif page == "🔧 Status do Sistema":
-        show_system_status(api, db)
+    with col2:
+        # Sidebar com informações contextuais
+        st.markdown("### 📊 Contexto do Seu Negócio")
+        
+        business_context = assistant.get_business_context()
+        
+        if business_context["has_data"]:
+            financial = business_context["financial_summary"]
+            
+            st.markdown('<div class="metric-card">', unsafe_allow_html=True)
+            st.metric("📦 Produção Total", f"{financial['total_production']:.0f} cx")
+            st.markdown('</div>', unsafe_allow_html=True)
+            
+            st.markdown('<div class="metric-card">', unsafe_allow_html=True)
+            st.metric("💰 Receita Total", f"R$ {financial['total_revenue']:,.0f}")
+            st.markdown('</div>', unsafe_allow_html=True)
+            
+            st.markdown('<div class="metric-card">', unsafe_allow_html=True)
+            st.metric("🎯 Lucro Líquido", f"R$ {financial['profit']:,.0f}")
+            st.markdown('</div>', unsafe_allow_html=True)
+            
+            st.markdown('<div class="metric-card">', unsafe_allow_html=True)
+            st.metric("📈 Margem", f"{financial['profit_margin']:.1f}%")
+            st.markdown('</div>', unsafe_allow_html=True)
+            
+            # Insights rápidos
+            st.markdown("### 💡 Insights Rápidos")
+            for insight in business_context["insights"][:3]:
+                st.info(insight)
+                
+            # Cultura principal
+            st.markdown(f"**🌱 Cultura Principal:** {business_context.get('main_crop', 'Não identificada')}")
+            
+        else:
+            st.info("💼 **Cadastre seus dados de produção** para análises personalizadas")
+            st.markdown("""
+            Com seus dados, posso ajudar com:
+            • Análises financeiras precisas
+            • Recomendações específicas
+            • Acompanhamento de produtividade
+            • Otimização de custos
+            """)
+        
+        # Status do sistema
+        st.markdown("---")
+        st.markdown("### 🔧 Status do Sistema")
+        
+        # Testar conexão Embrapa
+        if assistant.embrapa_api.ensure_valid_token():
+            st.success("✅ API Embrapa: Conectada")
+        else:
+            st.error("❌ API Embrapa: Desconectada")
+        
+        # Testar conexão Banco
+        conn = assistant.db.get_connection()
+        if conn:
+            st.success("✅ Banco de Dados: Conectado")
+            conn.close()
+        else:
+            st.error("❌ Banco de Dados: Desconectado")
     
     # Footer
     st.markdown("---")
     st.markdown("""
     <div style='text-align: center; color: #666;'>
-    <p>🚀 <strong>SISTEMA INTELIGENTE AGRO</strong> - Conhecimento Científico + Dados do Negócio</p>
-    <p>📧 Suporte: agroai@embrapa.br | 🕒 Atualizado: Dez 2024</p>
+    <p>🚀 <strong>AGROASSISTENTE IA</strong> - Conhecimento Científico Embrapa + Análise de Dados em Tempo Real</p>
+    <p>💡 Dica: Pergunte sobre técnicas, finanças, problemas ou análises do seu negócio</p>
     </div>
     """, unsafe_allow_html=True)
 
